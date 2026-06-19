@@ -1,11 +1,20 @@
 <?php
-// Tampilkan semua error ke output agar terlihat di log Vercel
-ini_set('display_errors', '1');
+// Tangkap semua jenis error
+ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-// Set path ke /tmp agar bisa ditulis
-putenv('VIEW_COMPILED_PATH=/tmp');
+// Pastikan path penyimpanan adalah /tmp
 putenv('APP_STORAGE=/tmp');
+putenv('VIEW_COMPILED_PATH=/tmp');
 
-// Load aplikasi secara langsung
-require __DIR__ . '/../public/index.php';
+// Tambahkan pencegahan agar tidak crash saat memuat bootstrap
+require __DIR__ . '/../vendor/autoload.php';
+$app = require_once __DIR__ . '/../bootstrap/app.php';
+
+// Jalankan kernel
+$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+$response = $kernel->handle(
+    $request = Illuminate\Http\Request::capture()
+);
+$response->send();
+$kernel->terminate($request, $response);
