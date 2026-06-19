@@ -4,10 +4,9 @@ error_reporting(E_ALL);
 
 define('LARAVEL_START', microtime(true));
 
-// ── 1. Writable storage in /tmp (Vercel is read-only except /tmp) ──────────
+// ── 1. Create all writable dirs in /tmp BEFORE Laravel boots ───────────────
 $storagePath = '/tmp/storage';
 $dirs = [
-    $storagePath,
     $storagePath . '/app/public',
     $storagePath . '/framework/cache/data',
     $storagePath . '/framework/sessions',
@@ -18,27 +17,32 @@ foreach ($dirs as $dir) {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
 }
 
-// ── 2. Point Laravel env vars at /tmp ──────────────────────────────────────
-$_ENV['APP_STORAGE']          = $storagePath;
-$_ENV['VIEW_COMPILED_PATH']   = $storagePath . '/framework/views';
-$_ENV['SESSION_DRIVER']       = 'array';   // no file sessions on read-only FS
-$_ENV['CACHE_DRIVER']         = 'array';   // no file cache on read-only FS
-$_ENV['LOG_CHANNEL']          = 'stderr';  // logs go to Vercel log stream
+// ── 2. Set env vars BEFORE autoload so config picks them up ────────────────
+$_SERVER['APP_STORAGE']        = $storagePath;
+$_SERVER['VIEW_COMPILED_PATH'] = $storagePath . '/framework/views';
+$_SERVER['SESSION_DRIVER']     = 'array';
+$_SERVER['CACHE_STORE']        = 'array';
+$_SERVER['LOG_CHANNEL']        = 'stderr';
 
-putenv('APP_STORAGE='        . $storagePath);
-putenv('VIEW_COMPILED_PATH=' . $storagePath . '/framework/views');
+putenv('APP_STORAGE='         . $storagePath);
+putenv('VIEW_COMPILED_PATH='  . $storagePath . '/framework/views');
 putenv('SESSION_DRIVER=array');
-putenv('CACHE_DRIVER=array');
+putenv('CACHE_STORE=array');
 putenv('LOG_CHANNEL=stderr');
 
-// ── 3. Bootstrap Laravel ────────────────────────────────────────────────────
+// ── 3. Autoload ─────────────────────────────────────────────────────────────
 require __DIR__ . '/../vendor/autoload.php';
 
+// ── 4. Boot app, override storage path immediately ──────────────────────────
 $app = require_once __DIR__ . '/../bootstrap/app.php';
 
-// Override storage path so ALL of Laravel uses /tmp
+// This must happen before any service provider resolves 'view'
 $app->useStoragePath($storagePath);
 
+// Bind the compiled view path into the container directly
+$app->instance('path.storage', $storagePath);
+
+// ── 5. Handle request ───────────────────────────────────────────────────────
 $kernel   = $app->make(Illuminate\Contracts\Http\Kernel::class);
 $response = $kernel->handle(
     $request = Illuminate\Http\Request::capture()
